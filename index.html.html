@@ -1,0 +1,265 @@
+<style>
+#map-wrap { width:100%; position:relative; }
+#map-wrap svg { width:100%; height:auto; display:block; }
+#tooltip {
+  position:absolute; pointer-events:none; opacity:0;
+  background:var(--color-background-primary);
+  border:0.5px solid var(--color-border-secondary);
+  border-radius:8px; padding:10px 14px; font-size:13px;
+  color:var(--color-text-primary); min-width:160px;
+  transition:opacity .15s; z-index:10;
+}
+.dot { cursor:pointer; }
+.dot:hover { opacity:0.85; }
+#legend { display:flex; flex-wrap:wrap; gap:10px 20px; margin:14px 0 4px; font-size:12px; color:var(--color-text-secondary); }
+#legend span { display:flex; align-items:center; gap:6px; }
+#legend .sq { width:11px; height:11px; border-radius:2px; flex-shrink:0; }
+#filter-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+#filter-row button {
+  font-size:12px; padding:4px 12px; border-radius:20px;
+  border:0.5px solid var(--color-border-secondary);
+  background:transparent; color:var(--color-text-secondary);
+  cursor:pointer; transition:all .15s;
+}
+#filter-row button.active {
+  color:#fff; border-color:transparent;
+}
+</style>
+
+<div id="filter-row"></div>
+<div id="map-wrap">
+  <div id="tooltip"></div>
+  <svg id="india-svg" viewBox="0 0 600 700"></svg>
+</div>
+<div id="legend"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script>
+const PRODUCTS = {
+  'REN PRO':  { color:'#0A5C63', sym:'R' },
+  'REN BEAM': { color:'#185FA5', sym:'B' },
+  'BRISK':    { color:'#C45200', sym:'K' },
+  'DRIP':     { color:'#2E7D32', sym:'D' },
+  'HOT BLOX': { color:'#6A1B9A', sym:'X' },
+  'HOT BAR':  { color:'#E65100', sym:'H' },
+  'HALO':     { color:'#B71C1C', sym:'L' },
+};
+
+const DATA = [
+  { city:'Mumbai',       lat:19.07, lon:72.87, jan:{ 'REN PRO':4,'BRISK':2,'DRIP':1,'REN BEAM':1,'HALO':0 }, feb:{ 'REN PRO':6,'DRIP':3,'HALO':4,'BRISK':1 } },
+  { city:'Delhi',        lat:28.67, lon:77.21, jan:{ 'REN PRO':3,'BRISK':2,'HOT BLOX':1,'HALO':1 }, feb:{ 'REN PRO':6,'DRIP':3,'HALO':2,'BRISK':2,'REN BEAM':1 } },
+  { city:'Bangalore',    lat:12.97, lon:77.59, jan:{ 'REN PRO':4,'BRISK':1,'DRIP':1,'REN BEAM':1 }, feb:{ 'REN PRO':4,'HALO':5,'DRIP':3,'BRISK':3 } },
+  { city:'Hyderabad',    lat:17.38, lon:78.47, jan:{ 'REN PRO':4 }, feb:{ 'REN PRO':4,'HALO':3 } },
+  { city:'Chennai',      lat:13.08, lon:80.27, jan:{ 'BRISK':1,'HALO':1 }, feb:{ 'REN PRO':5,'HALO':3,'DRIP':1 } },
+  { city:'Ahmedabad',    lat:23.02, lon:72.57, jan:{ 'BRISK':2,'HOT BAR':1 }, feb:{ 'REN PRO':1,'DRIP':2,'HALO':2,'BRISK':1 } },
+  { city:'Pune',         lat:18.52, lon:73.86, jan:{ 'REN PRO':1 }, feb:{ 'REN PRO':2,'HALO':2,'DRIP':1,'BRISK':1 } },
+  { city:'Gurgaon',      lat:28.46, lon:77.03, jan:{ 'REN PRO':2 }, feb:{ 'REN PRO':3,'HALO':2 } },
+  { city:'Noida',        lat:28.54, lon:77.39, jan:{ 'REN PRO':1 }, feb:{ 'REN PRO':2 } },
+  { city:'Kolkata',      lat:22.57, lon:88.36, jan:{ 'BRISK':1 }, feb:{ 'REN PRO':1,'HALO':1 } },
+  { city:'Surat',        lat:21.17, lon:72.83, jan:{ 'REN PRO':1 }, feb:{ 'REN PRO':1,'DRIP':1,'HALO':2 } },
+  { city:'Ludhiana',     lat:30.90, lon:75.85, jan:{}, feb:{ 'REN PRO':2,'BRISK':1 } },
+  { city:'Chandigarh',   lat:30.74, lon:76.79, jan:{ 'HOT BLOX':1,'DRIP':1 }, feb:{ 'BRISK':1 } },
+  { city:'Jaipur',       lat:26.91, lon:75.79, jan:{}, feb:{ 'REN PRO':1 } },
+  { city:'Indore',       lat:22.72, lon:75.86, jan:{ 'BRISK':1 }, feb:{} },
+  { city:'Lucknow',      lat:26.85, lon:80.94, jan:{ 'BRISK':1 }, feb:{ 'REN PRO':1 } },
+  { city:'Coimbatore',   lat:11.00, lon:76.96, jan:{}, feb:{ 'REN PRO':1,'DRIP':1 } },
+  { city:'Bhubaneswar',  lat:20.30, lon:85.82, jan:{}, feb:{ 'REN PRO':1,'DRIP':1,'HALO':1 } },
+  { city:'Kolhapur',     lat:16.70, lon:74.23, jan:{ 'REN PRO':1 }, feb:{} },
+  { city:'Nashik',       lat:20.00, lon:73.79, jan:{}, feb:{ 'REN PRO':1,'HALO':1 } },
+  { city:'Baroda',       lat:22.31, lon:73.18, jan:{ 'REN PRO':1 }, feb:{} },
+  { city:'Jamnagar',     lat:22.47, lon:70.06, jan:{}, feb:{ 'REN PRO':1,'DRIP':1 } },
+  { city:'Rajkot',       lat:22.30, lon:70.80, jan:{}, feb:{ 'REN PRO':1 } },
+  { city:'Siliguri',     lat:26.72, lon:88.43, jan:{}, feb:{ 'REN PRO':1,'HALO':1 } },
+  { city:'Mangalore',    lat:12.86, lon:74.84, jan:{}, feb:{ 'REN PRO':1 } },
+  { city:'Coorg',        lat:12.33, lon:75.83, jan:{}, feb:{ 'REN PRO':1 } },
+  { city:'Bareilly',     lat:28.36, lon:79.41, jan:{}, feb:{ 'REN PRO':1,'HALO':1 } },
+  { city:'Jalandhar',    lat:31.33, lon:75.57, jan:{}, feb:{ 'REN PRO':1,'BRISK':1 } },
+  { city:'Ratlam',       lat:23.33, lon:75.04, jan:{ 'BRISK':1 }, feb:{ 'REN PRO':1,'BRISK':1 } },
+  { city:'Bhatinda',     lat:30.21, lon:74.95, jan:{}, feb:{ 'REN BEAM':1 } },
+  { city:'Srinagar',     lat:34.08, lon:74.79, jan:{}, feb:{ 'REN PRO':1,'DRIP':1 } },
+  { city:'Kerala',       lat:10.85, lon:76.27, jan:{ 'BRISK':1 }, feb:{ 'REN PRO':1,'DRIP':1,'HALO':1 } },
+  { city:'Ahmedabad RB', lat:23.15, lon:72.65, jan:{}, feb:{ 'REN BEAM':1 } },
+];
+
+const MONTH_OPTIONS = ['Both','January','February'];
+let activeMonth = 'Both';
+let activeProduct = 'All';
+const INDIA_TOPO = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/ind.topo.json';
+const svg = d3.select('#india-svg');
+const tooltip = document.getElementById('tooltip');
+const wrap = document.getElementById('map-wrap');
+
+const proj = d3.geoMercator().center([82, 22]).scale(1050).translate([300, 330]);
+const path = d3.geoPath(proj);
+
+function getCityData(d) {
+  const merged = {};
+  for (const [prod, cnt] of Object.entries(d.jan || {})) {
+    if (!merged[prod]) merged[prod] = { jan:0, feb:0 };
+    merged[prod].jan += cnt;
+  }
+  for (const [prod, cnt] of Object.entries(d.feb || {})) {
+    if (!merged[prod]) merged[prod] = { jan:0, feb:0 };
+    merged[prod].feb += cnt;
+  }
+  return merged;
+}
+
+function getFilteredTotal(d) {
+  const all = getCityData(d);
+  let total = 0;
+  for (const [prod, v] of Object.entries(all)) {
+    if (activeProduct !== 'All' && prod !== activeProduct) continue;
+    if (activeMonth === 'January') total += v.jan;
+    else if (activeMonth === 'February') total += v.feb;
+    else total += v.jan + v.feb;
+  }
+  return total;
+}
+
+function getTopProduct(d) {
+  const all = getCityData(d);
+  let top = null, max = 0;
+  for (const [prod, v] of Object.entries(all)) {
+    if (activeProduct !== 'All' && prod !== activeProduct) continue;
+    const cnt = activeMonth === 'January' ? v.jan : activeMonth === 'February' ? v.feb : v.jan + v.feb;
+    if (cnt > max) { max = cnt; top = prod; }
+  }
+  return top;
+}
+
+function render(topo) {
+  svg.selectAll('*').remove();
+
+  const features = topojson.feature(topo, topo.objects.ind).features;
+  svg.selectAll('path').data(features).join('path')
+    .attr('d', path)
+    .attr('fill', '#E8EEF4')
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 0.8);
+
+  const visibleCities = DATA.filter(d => getFilteredTotal(d) > 0);
+
+  visibleCities.forEach(d => {
+    const [x, y] = proj([d.lon, d.lat]);
+    const total = getFilteredTotal(d);
+    const top = getTopProduct(d);
+    if (!top) return;
+    const col = PRODUCTS[top].color;
+    const r = Math.max(8, Math.min(26, 6 + total * 2.8));
+
+    const g = svg.append('g')
+      .attr('class','dot')
+      .attr('transform', `translate(${x},${y})`)
+      .on('mouseenter', function(ev) {
+        const all = getCityData(d);
+        let rows = '';
+        for (const [prod, v] of Object.entries(all)) {
+          if (activeProduct !== 'All' && prod !== activeProduct) continue;
+          const cnt = activeMonth === 'January' ? v.jan : activeMonth === 'February' ? v.feb : v.jan + v.feb;
+          if (cnt === 0) continue;
+          rows += `<div style="display:flex;justify-content:space-between;gap:16px;margin:3px 0">
+            <span style="color:${PRODUCTS[prod].color};font-weight:500">${prod}</span>
+            <span style="font-weight:500">${cnt}</span>
+          </div>`;
+        }
+        tooltip.innerHTML = `<div style="font-weight:500;margin-bottom:6px;color:var(--color-text-primary)">${d.city}</div>${rows}`;
+        tooltip.style.opacity = '1';
+      })
+      .on('mousemove', function(ev) {
+        const br = wrap.getBoundingClientRect();
+        const ex = ev.clientX - br.left, ey = ev.clientY - br.top;
+        tooltip.style.left = (ex + 12) + 'px';
+        tooltip.style.top  = (ey - 10) + 'px';
+      })
+      .on('mouseleave', () => tooltip.style.opacity = '0');
+
+    g.append('circle')
+      .attr('r', r)
+      .attr('fill', col)
+      .attr('fill-opacity', 0.82)
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 1.2);
+
+    if (r >= 12) {
+      g.append('text')
+        .attr('text-anchor','middle')
+        .attr('dy','0.35em')
+        .attr('fill','#fff')
+        .attr('font-size', Math.max(9, r * 0.55))
+        .attr('font-family','Arial,sans-serif')
+        .attr('font-weight','500')
+        .attr('pointer-events','none')
+        .text(total);
+    }
+  });
+}
+
+function buildFilters(topo) {
+  const fr = document.getElementById('filter-row');
+  fr.innerHTML = '';
+
+  ['All', ...Object.keys(PRODUCTS)].forEach(p => {
+    const btn = document.createElement('button');
+    btn.textContent = p;
+    if (p !== 'All' && PRODUCTS[p]) {
+      btn.style.borderColor = PRODUCTS[p].color + '88';
+    }
+    if (p === activeProduct) {
+      btn.classList.add('active');
+      btn.style.background = p === 'All' ? '#1B3A5C' : (PRODUCTS[p] ? PRODUCTS[p].color : '#1B3A5C');
+    }
+    btn.onclick = () => {
+      activeProduct = p;
+      fr.querySelectorAll('button').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'transparent';
+      });
+      btn.classList.add('active');
+      btn.style.background = p === 'All' ? '#1B3A5C' : (PRODUCTS[p] ? PRODUCTS[p].color : '#1B3A5C');
+      render(topo);
+    };
+    fr.appendChild(btn);
+  });
+
+  ['Both','January','February'].forEach(m => {
+    const btn = document.createElement('button');
+    btn.textContent = m;
+    if (m === activeMonth) {
+      btn.classList.add('active');
+      btn.style.background = '#444';
+    }
+    btn.onclick = () => {
+      activeMonth = m;
+      fr.querySelectorAll('button').forEach(b => {
+        if (['Both','January','February'].includes(b.textContent)) {
+          b.classList.remove('active');
+          b.style.background = 'transparent';
+        }
+      });
+      btn.classList.add('active');
+      btn.style.background = '#444';
+      render(topo);
+    };
+    fr.appendChild(btn);
+  });
+}
+
+function buildLegend() {
+  const leg = document.getElementById('legend');
+  leg.innerHTML = Object.entries(PRODUCTS).map(([name, p]) =>
+    `<span><span class="sq" style="background:${p.color}"></span>${name}</span>`
+  ).join('') + `<span style="margin-left:8px;color:var(--color-text-tertiary)">Circle size = total orders · Hover for breakdown</span>`;
+}
+
+buildLegend();
+
+d3.json(INDIA_TOPO).then(topo => {
+  buildFilters(topo);
+  render(topo);
+}).catch(() => {
+  document.getElementById('map-wrap').innerHTML =
+    '<p style="color:var(--color-text-secondary);padding:1rem">Could not load map topology. Please check your connection.</p>';
+});
+</script>
